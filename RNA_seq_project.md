@@ -227,14 +227,23 @@ Poly-T tails are also no longer present in HQ10E2_2.
 
 &nbsp;
 
-## Next Steps
+## Indexing Reference Genome and Annotation
 
-- Index reference genome and annotation
+Index the genome with STAR
+
+```bash
+STAR \
+--runThreadN 56 \
+--runMode genomeGenerate \
+--genomeDir ~/pw_oilfield/assembly \
+--genomeFastaFiles ~/pw_oilfield/assembly/Phaeodactylum_tricornutum.ASM15095v2.dna.toplevel.fa \
+--sjdbGTFfile ~/pw_oilfield/annotation/Phaeodactylum_tricornutum.ASM15095v2.50.gtf \
+--sjdbOverhang 149 \
+--genomeSAindexNbases 11
+```
+
+TO DO:
 - Align reads to reference genome
 - Create counts table from alignment results
 - Perform differential gene expression analysis in R
 - Perform gene ontology enrichment analysis
-
-Send Sudhin Domala
-GitHub Repository
-Genome alignment
