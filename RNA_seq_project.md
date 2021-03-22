@@ -11,7 +11,7 @@ Claudia Vo
 \
 Sudhin Domala
 
-Last Updated: 3/9/2021
+https://github.com/codey-phoun/pw_oilfield
 
 &nbsp;
 
@@ -242,8 +242,68 @@ STAR \
 --genomeSAindexNbases 11
 ```
 
+## Align Reads to Reference Genome with STAR
+
+Map the sample reads to the reference genome with STAR.
+Run the script run_star_align_parallel.sh
+
+```bash
+for sample in $(cd ~/pw_oilfield/trimmed && ls *.fq | sed s/_[12]_trimmed.fq// | sort -u)
+do
+
+sbatch ~/pw_oilfield/scripts/star_align_parallel.sh ${sample}
+echo "Submitted ${sample}"
+
+done
+```
+
+run_star_align_parallel.sh submits a STAR job in SLURM for each sample.
+
+```bash
+STAR \
+--runThreadN 12 \
+--runMode alignReads \
+--genomeDir ~/pw_oilfield/assembly \
+--quantMode GeneCounts \
+--outSAMtype BAM SortedByCoordinate \
+--limitBAMsortRAM 32000000000 `#32GB - can be increased if needed`\
+--readFilesIn ~/pw_oilfield/trimmed/${sample}_1_trimmed.fq ~/pw_oilfield/trimmed/${sample}_2_trimmed.fq \
+--outFileNamePrefix ~/pw_oilfield/alignment_sorted/${sample}_
+```
+
+## Create Count Table from STAR Alignment Results
+
+The merge_star.sh script creates a matrix of the gene counts for each sample.
+
+```bash
+# modified from https://ucdavis-bioinformatics-training.github.io/2020-mRNA_Seq_Workshop/data_reduction/03-counts_mm
+
+# create header file
+echo gene_name $(cd ~/pw_oilfield/alignment_sorted && ls *_ReadsPerGene.out.tab | sed s/_ReadsPerGene.out.tab// | sort -u) > ~/pw_oilfield/alignment_sorted/tmp/header.txt
+
+# Place each sample's STAR gene count file - ReadsPerGene.out.tab in the tmp/ directory 
+# The 2nd column (-f2) of ReadsPerGene.out.tab contains the non-stranded counts
+for sample in $(cd ~/pw_oilfield/alignment_sorted && ls *_ReadsPerGene.out.tab | sed s/_ReadsPerGene.out.tab// | sort -u)
+do 
+    echo ${sample}
+    cat ~/pw_oilfield/alignment_sorted/${sample}_ReadsPerGene.out.tab | tail -n +5 | cut -f2 > ~/pw_oilfield/alignment_sorted/tmp/${sample}.count
+done
+
+# get a list of gene ids (-f1)
+tail -n +5 ~/pw_oilfield/alignment_sorted/HQ10E1_ReadsPerGene.out.tab | cut -f1 > ~/pw_oilfield/alignment_sorted/tmp/geneids.txt
+
+# combine all the columns of the count files
+paste ~/pw_oilfield/alignment_sorted/tmp/geneids.txt ~/pw_oilfield/alignment_sorted/tmp/*.count > ~/pw_oilfield/alignment_sorted/tmp/tmp.out
+
+# add the header
+cat <(cat ~/pw_oilfield/alignment_sorted/tmp/header.txt | sed 's/ /\t/g') ~/pw_oilfield/alignment_sorted/tmp/tmp.out > ~/pw_oilfield/alignment_sorted/STAR_counts.txt
+
+# remove the tmp folder
+rm -rf ~/pw_oilfield/alignment_sorted/tmp
+```
+
 TO DO:
-- Align reads to reference genome
-- Create counts table from alignment results
+
+- View/Summarize STAR results with MultiQC
 - Perform differential gene expression analysis in R
 - Perform gene ontology enrichment analysis

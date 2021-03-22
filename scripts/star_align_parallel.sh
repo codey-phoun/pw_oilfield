@@ -18,15 +18,15 @@ sample=$1
 
 echo "Mapping ${sample}"
 
-    STAR \
-    --runThreadN 12 \
-    --runMode alignReads \
-    --genomeDir ~/pw_oilfield/assembly \
-    --quantMode GeneCounts \
-    --outSAMtype BAM SortedByCoordinate \
-    --limitBAMsortRAM 32000000000 `#32GB - can be increased if needed`\
-    --readFilesIn ~/pw_oilfield/trimmed/${sample}_1_trimmed.fq ~/pw_oilfield/trimmed/${sample}_2_trimmed.fq \
-    --outFileNamePrefix ~/pw_oilfield/alignment_sorted/${sample}_
+STAR \
+--runThreadN 12 \
+--runMode alignReads \
+--genomeDir ~/pw_oilfield/assembly \
+--quantMode GeneCounts \
+--outSAMtype BAM SortedByCoordinate \
+--limitBAMsortRAM 32000000000 `#32GB - can be increased if needed`\
+--readFilesIn ~/pw_oilfield/trimmed/${sample}_1_trimmed.fq ~/pw_oilfield/trimmed/${sample}_2_trimmed.fq \
+--outFileNamePrefix ~/pw_oilfield/alignment_sorted/${sample}_
 
 echo "Finished STAR align"
 job_end=`date +%s`
