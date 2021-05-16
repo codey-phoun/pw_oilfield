@@ -302,8 +302,30 @@ cat <(cat ~/pw_oilfield/alignment_sorted/tmp/header.txt | sed 's/ /\t/g') ~/pw_o
 rm -rf ~/pw_oilfield/alignment_sorted/tmp
 ```
 
-TO DO:
+### STAR Results
 
-- View/Summarize STAR results with MultiQC
-- Perform differential gene expression analysis in R
-- Perform gene ontology enrichment analysis
+Overall, over 90% of the RNA seq reads uniquely mapped to the genome.
+
+![STAR Alignment Results](./pictures/star_alignment_results.png)
+
+![STAR Alignment Scores](./pictures/star_alignment_plot.png)
+
+![FasSTAR Gene Counts](./pictures/star_gene_counts.png)
+
+STAR_counts.txt head
+
+|    gene_name   | HQ10E1 | HQ10E2 | HQE1 | HQE2 | HQ_ST1 | HQ_ST2 | PWE1 | PWE2 | PW_ST1 | PW_ST2 |
+|:--------------:|:------:|--------|------|------|--------|--------|------|------|--------|--------|
+|  Phatr3_J31400 |    1   | 5      | 3    | 7    | 0      | 4      | 2    | 1    | 10     | 20     |
+|  Phatr3_J42422 |   144  | 172    | 214  | 153  | 402    | 451    | 117  | 101  | 203    | 253    |
+|  Phatr3_J31402 |    0   | 0      | 0    | 0    | 0      | 0      | 0    | 0    | 0      | 0      |
+|  Phatr3_J42423 |   27   | 44     | 77   | 42   | 557    | 508    | 46   | 39   | 110    | 304    |
+|  Phatr3_J42424 |  1819  | 2172   | 1876 | 1254 | 1524   | 1841   | 1518 | 1508 | 1035   | 1562   |
+|  Phatr3_J7430  |   455  | 510    | 620  | 443  | 467    | 513    | 333  | 456  | 337    | 364    |
+|  Phatr3_J42426 |  8520  | 9594   | 8689 | 7289 | 5396   | 7052   | 6769 | 7244 | 5813   | 8494   |
+| Phatr3_EG02408 |  3806  | 4483   | 3948 | 2637 | 224    | 238    | 3580 | 3084 | 216    | 368    |
+|  Phatr3_J31409 |  6448  | 7590   | 9257 | 5980 | 1008   | 1394   | 4863 | 4622 | 1381   | 1864   |
+
+&nbsp;
+
+Differential Gene Expression and Gene Ontology analysis was then performed in R. See the R markdown script "Produced_water_RNA_Seq.rmd" and "Produced_water_RNA_Seq.html".
