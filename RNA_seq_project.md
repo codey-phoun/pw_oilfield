@@ -11,7 +11,7 @@ Claudia Vo
 \
 Sudhin Domala
 
-https://github.com/codey-phoun/pw_oilfield
+<https://github.com/codey-phoun/pw_oilfield>
 
 &nbsp;
 
@@ -71,7 +71,6 @@ squeue # check status of a job
 ```
 
 See <http://spartan01.sjsu.edu/dokuwiki/doku.php?id=hpc:intro:job-submission> for more details.
-
 
 &nbsp;
 
