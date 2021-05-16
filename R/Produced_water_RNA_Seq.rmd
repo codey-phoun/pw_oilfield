@@ -1,0 +1,651 @@
+---
+title: "Differential Expression of *Phaeodactylum tricornutum* Grown in Produced Water"
+output:
+  html_document:
+    df_print: paged
+keep_md: yes
+---
+By:
+
+Claudia Vo
+
+Codey Phoun
+
+Sudhin Domala
+
+&nbsp;
+
+For:
+
+SJSU CS286 Project
+
+Dr. Andreopoulos 
+
+Spring 2021
+
+&nbsp;
+
+## Introduction
+
+**Sample abbreviations**
+
+HQE = normal media exponential growth (control)
+
+HQ10E = normal media + added 10% produced water (intermediate treatment)
+
+PWE = 100% produced water exponential (High treatment)
+
+HQ_ST = normal media stationary growth (control)
+
+PW_ST = 100% produced water stationary (treatment)
+
+## Setup
+
+Import libraries
+```{r}
+library(readr)
+library(edgeR)
+library(limma)
+library(pheatmap)
+```
+
+Gene count data was previously created with STAR
+
+Read in the count data as a data frame
+```{r}
+URL = "https://raw.githubusercontent.com/codey-phoun/pw_oilfield/main/STAR_results/STAR_counts.txt"
+star_data = read_tsv(URL)
+```
+Create count matrix
+```{r}
+star_data = as.data.frame(star_data)
+# Set row names to be the gene name and remove gene_name column
+rownames(star_data) <- star_data$gene_name
+star_data[1] <- NULL
+head(star_data)
+```
+
+
+Create a DGE list object
+```{r}
+group <- rep(c("HQ10E","HQE","HQ_ST","PWE","PW_ST"), 
+             each = 2)
+
+dge <- DGEList(counts = star_data, 
+               group = group) #creates a DGE list object
+dim(dge)
+full_dge <- dge #store original data just in case
+```
+
+Sample library sizes
+```{r}
+apply(dge$counts, 2, sum) # sum across columns/samples for each gene
+```
+
+## Filtering & Normalizing data
+
+Counts per million (cpm)
+```{r}
+head(cpm(dge))
+```
+
+Keep only 100 counts per million in at least 2 samples
+```{r}
+keep <- rowSums(cpm(dge)>100) >= 2
+table(keep)
+```
+
+```{r}
+
+dge <- dge[keep,]
+dim(dge)  #check number of genes left after filtering
+```
+12392 genes are filtered down to 3251 genes
+
+Reset the library size
+```{r}
+dge$samples$lib.size <- colSums(dge$counts)
+dge$samples
+```
+
+Library sizes before filtering:
+```{r}
+apply(full_dge$counts, 2, sum)
+```
+
+Library sizes after filtering:
+```{r}
+apply(dge$counts, 2, sum)
+```
+
+Normalize data by the trimmed mean of M-values (TMM) method proposed by Robinson and Oshlack (2010)
+```{r}
+dge_norm=calcNormFactors(dge, method="TMM")
+dge_norm
+```
+
+Multidimensional scaling plot to look at the inter-sample relationship by
+biological coefficient of variation (BCV) distance
+```{r}
+colors_mds <- c("red", "palevioletred4", "darkorange", "blue", "deepskyblue4")
+plotMDS(dge_norm, method="bcv", col=rep(colors_mds,each=2), pch = rep(c(0,7,1,15,19),each=2), cex = 1.75 )
+legend("bottomleft",as.character(unique(dge_norm$samples$group)),col=colors_mds,pch=c(0,7,1,15,19), ncol=2)
+```
+
+Exponential growth samples cluster together stronger than stationary growth
+
+Samples do not tend to cluster based on growth medium
+
+&nbsp;
+
+Create the design matrix
+```{r}
+design.mat <- model.matrix(~ 0 + dge_norm$samples$group)
+colnames(design.mat) <- levels(dge_norm$samples$group)
+```
+
+Estimate the dispersion with Cox-Reid profile-adjusted likelihood (CR) method in 
+estimating dispersions with Generalized linear models (GLMs)
+```{r}
+d2 <- estimateGLMCommonDisp(dge_norm,design.mat)
+d2 <- estimateGLMTrendedDisp(d2,design.mat, method="auto")
+# You can change method to "auto", "bin.spline", "power", "spline", "bin.loess".
+# The default is "auto" which chooses "bin.spline" when > 200 tags and "power" otherwise.
+d2 <- estimateGLMTagwiseDisp(d2,design.mat)
+plotBCV(d2)
+```
+
+Calculate log2 CPM values 
+```{r}
+logcpm <- cpm(d2, log = TRUE)
+```
+
+Create a matrix of contrasts for anova-like testing (since data has different conditions that we want to compare)
+
+ANOVA tests for DEGs between any set of groups with the null hypothesis that the mean gene expression is equal across all groups.
+```{r}
+my_contrasts<-makeContrasts(
+  HQst_vs_PWst = HQ_ST-PW_ST, #PW vs normal stationary growth samples
+  
+  HQE_vs_PWE = HQE-PWE,   # PW vs normal exponential growth samples, 
+  
+  HQST_vs_HQE = HQ_ST-HQE, #normal exponential vs normal stationary
+  
+  PWE_vs_PWST = PWE-PW_ST, #100% exponential vs 100% stationary PW samples
+  levels= design.mat
+)
+my_contrasts
+```
+
+Fit a quasi-likelihood negative binomial generalized log-linear model to count data
+```{r}
+fit <- glmQLFit(d2, design.mat)
+```
+
+## Normal Medium vs 100% Produced Water in Stationary Growth Samples
+```{r}
+HQst_vs_PWst <- glmQLFTest(fit, contrast = my_contrasts[,"HQst_vs_PWst"])
+# top 50 DEGs by lowest adjusted p-values
+HQst_vs_PWst_top50 <- topTags(HQst_vs_PWst,adjust.method = "BH", p.value = 0.05, n = 50)
+HQst_vs_PWst_all <- topTags(HQst_vs_PWst,adjust.method = "BH", p.value = 0.05, n = nrow(HQst_vs_PWst$table))
+HQst_vs_PWst_DEG <- HQst_vs_PWst_all[abs(HQst_vs_PWst_all$table$logFC) > 1, ]
+HQst_vs_PWst_up <- HQst_vs_PWst_all[HQst_vs_PWst_all$table$logFC > 1, ]
+HQst_vs_PWst_down <- HQst_vs_PWst_all[HQst_vs_PWst_all$table$logFC < -1, ]
+head(HQst_vs_PWst_top50, n=10)
+```
+
+Determine how many genes are up and down regulated for each pairwise comparison
+
+For differentially expressed genes set logFC and pvalue threshold to 0.05 and 1
+
+lfc=1 sets a 2-fold change minimum 
+```{r}
+is.de <- decideTestsDGE(HQst_vs_PWst,adjust.method="BH",p.value=0.05,lfc=1) 
+summary(is.de)
+```
+
+```{r}
+plotMD(HQst_vs_PWst, status=is.de, values=c(1,-1), col=c("maroon","cadetblue3"),
+       legend="topright", cex = .5, main = "MD Plot : HQ ST vs PW ST")
+```
+
+Volcano Plot
+```{r}
+volcanoData <- cbind(HQst_vs_PWst_all$table$logFC, -log10(HQst_vs_PWst_all$table$FDR))
+colnames(volcanoData) <- c("logFC", "negLogPval")
+DEGs <- HQst_vs_PWst_all$table$FDR < 0.05 & abs(HQst_vs_PWst_all$table$logFC) > 1
+point.col <- ifelse(DEGs, "red", "black")
+plot(volcanoData, pch=19, cex = .5, col = point.col, main = "Volcano Plot : HQ ST vs PW ST")
+
+```
+
+```{r}
+HQst_vs_PWst_top50_log2_cpm <- logcpm[rownames(HQst_vs_PWst_top50$table),]
+
+pheatmap(subset(HQst_vs_PWst_top50_log2_cpm,select=c(HQ_ST1,HQ_ST2,PW_ST1,PW_ST2)),
+         color=colorRampPalette(c("navy", "lavender", "maroon"))(15),fontsize_row=4)
+```
+
+## Normal Medium vs 100% Produced Water in Exponential Growth Samples
+
+```{r}
+HQE_vs_PWE <- glmQLFTest(fit, contrast = my_contrasts[,"HQE_vs_PWE"]) 
+HQE_vs_PWE_top50 = topTags(HQE_vs_PWE,adjust.method = "BH", p.value = 0.05, n = 50)
+HQE_vs_PWE_all = topTags(HQE_vs_PWE,adjust.method = "BH", p.value = 0.05, n = nrow(HQE_vs_PWE$table))
+HQE_vs_PWE_DEG <- HQE_vs_PWE_all[abs(HQE_vs_PWE_all$table$logFC) > 1, ]
+HQE_vs_PWE_up <- HQE_vs_PWE_all[HQE_vs_PWE_all$table$logFC > 1, ]
+HQE_vs_PWE_down <- HQE_vs_PWE_all[HQE_vs_PWE_all$table$logFC < -1, ]
+head(HQE_vs_PWE_top50, n=10)
+```
+
+Determine how many genes are up and down regulated for each pairwise comparison
+
+For differentially expressed genes set logFC and pvalue threshold to 0.05 and 1
+
+lfc=1 sets a 2-fold change minimum 
+```{r}
+
+is.de <- decideTestsDGE(HQE_vs_PWE,adjust.method="BH",p.value=0.05,lfc=1) 
+summary(is.de)
+```
+
+```{r}
+plotMD(HQE_vs_PWE, status=is.de, values=c(1,-1), col=c("maroon","cadetblue3"),
+       legend="topright", cex = .5, main = "MD Plot : HQ E vs PW E")
+```
+
+Volcano Plot
+```{r}
+volcanoData <- cbind(HQE_vs_PWE_all$table$logFC, -log10(HQE_vs_PWE_all$table$FDR))
+colnames(volcanoData) <- c("logFC", "negLogPval")
+DEGs <- HQE_vs_PWE_all$table$FDR < 0.05 & abs(HQE_vs_PWE_all$table$logFC) > 1
+point.col <- ifelse(DEGs, "red", "black")
+plot(volcanoData, pch=19, cex = .5, col = point.col, main = "Volcano Plot : HQ E vs PW E")
+
+```
+
+```{r}
+HQE_vs_PWE_top50_log2_cpm <- logcpm[rownames(HQE_vs_PWE_top50$table),]
+
+pheatmap(subset(HQE_vs_PWE_top50_log2_cpm,select=c(HQE1,HQE2,PWE1,PWE2)),
+         color=colorRampPalette(c("navy", "lavender", "maroon"))(15),fontsize_row=4)
+```
+
+
+## Normal Medium Exponential Growth vs Normal Medium in Stationary Growth
+
+```{r}
+HQST_vs_HQE <- glmQLFTest(fit, contrast = my_contrasts[,"HQST_vs_HQE"]) 
+HQST_vs_HQE_top50 = topTags(HQST_vs_HQE,adjust.method = "BH", p.value = 0.05, n = 50)
+HQST_vs_HQE_all = topTags(HQST_vs_HQE,adjust.method = "BH", p.value = 0.05, n = nrow(HQST_vs_HQE$table))
+HQST_vs_HQE_DEG <- HQST_vs_HQE_all[abs(HQST_vs_HQE_all$table$logFC) > 1, ]
+HQST_vs_HQE_up <- HQST_vs_HQE_all[HQST_vs_HQE_all$table$logFC > 1, ]
+HQST_vs_HQE_down <- HQST_vs_HQE_all[HQST_vs_HQE_all$table$logFC < -1, ]
+head(HQST_vs_HQE_top50, n=10)
+```
+
+Determine how many genes are up and down regulated for each pairwise comparison
+
+For differentially expressed genes set logFC and pvalue threshold to 0.05 and 1
+
+lfc=1 sets a 2-fold change minimum 
+```{r}
+
+is.de <- decideTestsDGE(HQST_vs_HQE,adjust.method="BH",p.value=0.05,lfc=1) 
+summary(is.de)
+```
+
+```{r}
+plotMD(HQST_vs_HQE, status=is.de, values=c(1,-1), col=c("maroon","cadetblue3"),
+       legend="topright", cex = .5, main = "MD Plot : HQ St vs HQ E")
+```
+
+Volcano Plot
+```{r}
+volcanoData <- cbind(HQST_vs_HQE_all$table$logFC, -log10(HQST_vs_HQE_all$table$FDR))
+colnames(volcanoData) <- c("logFC", "negLogPval")
+DEGs <- HQST_vs_HQE_all$table$FDR < 0.05 & abs(HQST_vs_HQE_all$table$logFC) > 1
+point.col <- ifelse(DEGs, "red", "black")
+plot(volcanoData, pch=19, cex = .5, col = point.col, main = "Volcano Plot : HQ St vs HQ E")
+
+```
+
+```{r}
+HQST_vs_HQE_top50_log2_cpm <- logcpm[rownames(HQST_vs_HQE_top50$table),]
+
+pheatmap(subset(HQST_vs_HQE_top50_log2_cpm,select=c(HQ_ST1, HQ_ST1, HQE1, HQE2)),
+         color=colorRampPalette(c("navy", "lavender", "maroon"))(15),fontsize_row=4)
+```
+
+
+## 100% Produced Water Exponential Growth vs 100% Produced Water in Stationary Growth
+
+```{r}
+PWE_vs_PWST <- glmQLFTest(fit, contrast = my_contrasts[,"PWE_vs_PWST"]) 
+PWE_vs_PWST_top50 = topTags(PWE_vs_PWST,adjust.method = "BH", p.value = 0.05, n = 50)
+PWE_vs_PWST_all = topTags(PWE_vs_PWST,adjust.method = "BH", p.value = 0.05, n = nrow(PWE_vs_PWST$table))
+PWE_vs_PWST_DEG <- PWE_vs_PWST_all[abs(PWE_vs_PWST_all$table$logFC) > 1, ]
+PWE_vs_PWST_up <- PWE_vs_PWST_all[PWE_vs_PWST_all$table$logFC > 1, ]
+PWE_vs_PWST_down <- PWE_vs_PWST_all[PWE_vs_PWST_all$table$logFC < -1, ]
+head(PWE_vs_PWST_top50, n=10)
+```
+
+Determine how many genes are up and down regulated for each pairwise comparison
+
+For differentially expressed genes set logFC and pvalue threshold to 0.05 and 1
+
+lfc=1 sets a 2-fold change minimum 
+```{r}
+
+is.de <- decideTestsDGE(PWE_vs_PWST,adjust.method="BH",p.value=0.05,lfc=1) 
+summary(is.de)
+```
+
+```{r}
+plotMD(PWE_vs_PWST, status=is.de, values=c(1,-1), col=c("maroon","cadetblue3"),
+       legend="topright", cex = .5, main = "MD Plot : PW E vs PW St")
+```
+
+Volcano Plot
+```{r}
+volcanoData <- cbind(PWE_vs_PWST_all$table$logFC, -log10(PWE_vs_PWST_all$table$FDR))
+colnames(volcanoData) <- c("logFC", "negLogPval")
+DEGs <- PWE_vs_PWST_all$table$FDR < 0.05 & abs(PWE_vs_PWST_all$table$logFC) > 1
+point.col <- ifelse(DEGs, "red", "black")
+plot(volcanoData, pch=19, cex = .5, col = point.col, main = "Volcano Plot : PW E vs PW St")
+
+```
+
+```{r}
+PWE_vs_PWST_top50_log2_cpm <- logcpm[rownames(PWE_vs_PWST_top50$table),]
+
+pheatmap(subset(PWE_vs_PWST_top50_log2_cpm,select=c(PWE1, PWE2, PW_ST1, PW_ST1)),
+         color=colorRampPalette(c("navy", "lavender", "maroon"))(15),fontsize_row=4)
+```
+
+## Exponential and Stationary Samples as the Only Contrasts
+
+Groups the normal media and PW and contrasts samples by their growth stage only
+```{r}
+group<-c("exp","exp","exp","exp","st","st","exp","exp","st","st")
+
+dge2<-DGEList(counts=star_data,group=group) #creates a DGE list object
+dim(dge2)
+full_dge<-dge2 #store original data just in case
+
+# filtering & normalizing data
+#keep only 100 counts per mil in at least 2 samples
+head(cpm(dge2))
+apply(dge2$counts, 2, sum)
+keep2 <- rowSums(cpm(dge2)>100) >=2
+dge2 <- dge2[keep2,]
+dim(dge2)  #check number of genes left after filtering
+
+#resetting the library size
+dge2$samples$lib.size <- colSums(dge2$counts)
+dge2$samples
+
+#now we can normalize the data
+dge_norm2=calcNormFactors(dge2, method="TMM")
+dge_norm2
+```
+
+```{r}
+# create design matrix
+design.mat2 <- model.matrix(~ 0 + dge_norm2$samples$group)
+colnames(design.mat2) <- levels(dge_norm2$samples$group)
+
+#estimate the dispersion
+d3 <- estimateGLMCommonDisp(dge_norm2,design.mat2)
+d3 <- estimateGLMTrendedDisp(d3,design.mat2, method="auto")
+# You can change method to "auto", "bin.spline", "power", "spline", "bin.loess".
+# The default is "auto" which chooses "bin.spline" when > 200 tags and "power" otherwise.
+d3 <- estimateGLMTagwiseDisp(d3,design.mat2)
+plotBCV(d3)
+```
+
+```{r}
+#create a matrix of contrasts for anova-like testing
+my_contrasts2<-makeContrasts(
+ #exponential vs stationary
+  exp_vs_st = exp-st,
+  levels= design.mat2
+)
+my_contrasts2
+
+fit2 <- glmQLFit(d3, design.mat2)
+```
+
+```{r}
+E_vs_ST <- glmQLFTest(fit2, contrast = my_contrasts2) 
+E_vs_ST_top100 = topTags(E_vs_ST,adjust.method = "BH", p.value = 0.05, n = 100)
+E_vs_ST_all = topTags(E_vs_ST,adjust.method = "BH", p.value = 0.05, n = nrow(E_vs_ST$table))
+E_vs_ST_DEG <- E_vs_ST_all[abs(E_vs_ST_all$table$logFC) > 1, ]
+E_vs_ST_up <- E_vs_ST_all[E_vs_ST_all$table$logFC > 1, ]
+E_vs_ST_down <- E_vs_ST_all[E_vs_ST_all$table$logFC < -1, ]
+head(E_vs_ST_top100, n=10)
+```
+
+Determine how many genes are up and down regulated for each pairwise comparison
+
+For differentially expressed genes set logFC and pvalue threshold to 0.05 and 1
+
+lfc=1 sets a 2-fold change minimum 
+```{r}
+
+is.de <- decideTestsDGE(E_vs_ST,adjust.method="BH",p.value=0.05,lfc=1) 
+summary(is.de)
+```
+
+```{r}
+plotMD(E_vs_ST, status=is.de, values=c(1,-1), col=c("maroon","cadetblue3"),
+       legend="topright", cex = .5, main = "MD Plot : Exponential vs Stationary Growth")
+```
+
+Volcano Plot
+```{r}
+volcanoData <- cbind(E_vs_ST_all$table$logFC, -log10(E_vs_ST_all$table$FDR))
+colnames(volcanoData) <- c("logFC", "negLogPval")
+DEGs <- E_vs_ST_all$table$FDR < 0.05 & abs(E_vs_ST_all$table$logFC) > 1
+point.col <- ifelse(DEGs, "red", "black")
+plot(volcanoData, pch=19, cex = .5, col = point.col, main = "Volcano Plot : Exponential vs Stationary Growth")
+```
+
+```{r}
+E_vs_ST_top100_log2_cpm <- logcpm[rownames(E_vs_ST_top100$table),]
+pheatmap(E_vs_ST_top100_log2_cpm,color=colorRampPalette(c("navy", "lavender", "maroon"))(15),fontsize_row=2.5)
+```
+
+### Find intersect of DEGs found between HQst_vs_PWst and HQE_vs_PWE
+```{r}
+common_HQ_vs_PW_DEGs <- intersect(row.names(HQst_vs_PWst_DEG$table), row.names(HQE_vs_PWE_DEG$table))
+common_HQ_vs_PW_DEGs <- data.frame(common_HQ_vs_PW_DEGs)
+```
+
+### Write all DEGs results to a Excel file
+```{r}
+library(openxlsx)
+list_of_datasets <- list("HQst_vs_PWst" = HQst_vs_PWst_DEG$table, 
+                         "HQE_vs_PWE" = HQE_vs_PWE_DEG$table,
+                         "HQST_vs_HQE" = HQST_vs_HQE_DEG$table,
+                         "PWE_vs_PWST" = PWE_vs_PWST_DEG$table,
+                         "E_vs_ST" = E_vs_ST_DEG$table,
+                         "HQ_vs_PW" = common_HQ_vs_PW_DEGs
+                         )
+write.xlsx(list_of_datasets, file = "PW_DEGs.xlsx", row.names = TRUE)
+```
+
+## Gene Ontology
+Perform gene ontology of the common DEGs between HQst_vs_PWst and HQE_vs_PWE with gprofiler2
+```{r, warning=FALSE, message=FALSE}
+library(gprofiler2)
+
+HQst_vs_PWst_over_rep <- gost(query = list("HQst vs PWst" = row.names(HQst_vs_PWst_DEG$table)),      
+                          organism = "ptricornutum",
+                          ordered_query = TRUE,
+                          measure_underrepresentation = FALSE,
+                          evcodes = TRUE)
+
+HQE_vs_PWE_over_rep <- gost(query = list("HQE vs PWE" = row.names(HQE_vs_PWE_DEG$table)),      
+                          organism = "ptricornutum",
+                          ordered_query = TRUE,
+                          measure_underrepresentation = FALSE,
+                          evcodes = TRUE)
+
+HQst_vs_PWst_under_rep <- gost(query = list("HQst vs PWst" = row.names(HQst_vs_PWst_DEG$table)),      
+                          organism = "ptricornutum",
+                          ordered_query = TRUE,
+                          measure_underrepresentation = TRUE,
+                          evcodes = TRUE)
+
+HQE_vs_PWE_under_rep <- gost(query = list("HQE vs PWE" = row.names(HQE_vs_PWE_DEG$table)),      
+                          organism = "ptricornutum",
+                          ordered_query = TRUE,
+                          measure_underrepresentation = TRUE,
+                          evcodes = TRUE)
+```
+
+### HQst vs PWst
+
+Visualize the over-represented GO terms of HQst vs PWst
+```{r}
+gostplot(HQst_vs_PWst_over_rep, capped = TRUE, interactive = TRUE)
+```
+Top 20 GO terms of over-represented DEGs in HQst vs PWst by lowest p-values
+```{r, fig.width=9, fig.height=6, warning=FALSE, message=FALSE}
+publish_gosttable(HQst_vs_PWst_over_rep,
+                  highlight_terms = HQst_vs_PWst_over_rep$result[order(HQst_vs_PWst_over_rep$result$p_value),][1:20,])
+```
+
+Visualize the under-represented GO terms of HQst vs PWst
+```{r}
+gostplot(HQst_vs_PWst_under_rep, capped = TRUE, interactive = TRUE)
+```
+Top 20 GO terms of under-represented DEGs in HQst vs PWst by lowest p-values
+```{r, fig.width=9, fig.height=6, warning=FALSE, message=FALSE}
+publish_gosttable(HQst_vs_PWst_under_rep,
+                  highlight_terms = HQst_vs_PWst_under_rep$result[order(HQst_vs_PWst_under_rep$result$p_value),][1:20,])
+```
+
+### HQE vs PWE
+
+Visualize the over-represented GO terms of HQE vs PWE
+```{r}
+gostplot(HQE_vs_PWE_over_rep, capped = TRUE, interactive = TRUE)
+```
+Top 20 GO terms of over-represented DEGs in HQE vs PWE by lowest p-values
+```{r, fig.width=9, fig.height=6, warning=FALSE, message=FALSE}
+publish_gosttable(HQE_vs_PWE_over_rep,
+                  highlight_terms = HQE_vs_PWE_over_rep$result[order(HQE_vs_PWE_over_rep$result$p_value),][1:20,]
+                  )
+```
+
+Visualize the under-represented GO terms of HQE vs PWE
+```{r}
+gostplot(HQE_vs_PWE_under_rep, capped = TRUE, interactive = TRUE)
+```
+
+Top 20 GO terms of under-represented DEGs in HQE vs PWE by lowest p-values
+```{r, fig.width=9, fig.height=6, warning=FALSE, message=FALSE}
+publish_gosttable(HQE_vs_PWE_under_rep,
+                  highlight_terms = HQE_vs_PWE_under_rep$result[order(HQE_vs_PWE_under_rep$result$p_value),][1:20,]
+                  )
+```
+
+### Common DEGs between HQst vs PWst and HQE and PWE
+```{r}
+common_HQ_vs_PW_over_rep <- gost(query = list("Common Over-rep DEGs: HQ vs PW" = common_HQ_vs_PW_DEGs[,1]),      
+                          organism = "ptricornutum",
+                          ordered_query = TRUE,
+                          measure_underrepresentation = FALSE,
+                          evcodes = TRUE)
+
+common_HQ_vs_PW_under_rep <- gost(query = list("Common Under-rep DEGs: HQ vs PW" = common_HQ_vs_PW_DEGs[,1]),      
+                          organism = "ptricornutum",
+                          ordered_query = TRUE,
+                          measure_underrepresentation = TRUE,
+                          evcodes = TRUE)
+```
+
+```{r}
+gostplot(common_HQ_vs_PW_over_rep, capped = TRUE, interactive = TRUE)
+```
+
+```{r, fig.width=9, fig.height=3, warning=FALSE, message=FALSE}
+publish_gosttable(common_HQ_vs_PW_over_rep,
+                  highlight_terms = common_HQ_vs_PW_over_rep$result[order(common_HQ_vs_PW_over_rep$result$p_value),][1:20,])
+```
+
+```{r}
+gostplot(common_HQ_vs_PW_under_rep, capped = TRUE, interactive = TRUE)
+```
+
+```{r, fig.width=9, fig.height=6, warning=FALSE, message=FALSE}
+publish_gosttable(common_HQ_vs_PW_under_rep,
+                  highlight_terms = common_HQ_vs_PW_under_rep$result[order(common_HQ_vs_PW_under_rep$result$p_value),][1:20,])
+```
+
+Write gene ontology results to an Excel file
+```{r}
+columns <- c("term_id", 
+             "source", 
+             "term_name", 
+             "p_value", 
+             "effective_domain_size", 
+             "intersection_size",
+             "intersection")
+
+GO_results <- list("HQst_vs_PWst_over_rep" = HQst_vs_PWst_over_rep$result[, columns], 
+                   "HQst_vs_PWst_under_rep" = HQst_vs_PWst_under_rep$result[, columns],
+                   "HQE_vs_PWE_over_rep" = HQE_vs_PWE_over_rep$result[, columns],
+                   "HQE_vs_PWE_under_rep" = HQE_vs_PWE_under_rep$result[, columns],
+                   "common_HQ_vs_PW_over_rep" = common_HQ_vs_PW_over_rep$result[, columns],
+                   "common_HQ_vs_PW_under_rep" = common_HQ_vs_PW_under_rep$result[, columns]
+                   )
+
+write.xlsx(GO_results, file = "PW_GO_results.xlsx", row.names = TRUE)
+```
+
+### Explore Gene Ontology of Up-regulated vs Down-regulated DEGs in HQst vs PWst
+
+```{r}
+HQst_vs_PWst_up_reg_over_rep <- gost(query = list("HQst vs PWst Up-regulated" = row.names(HQst_vs_PWst_up$table)),      
+                                    organism = "ptricornutum",
+                                    ordered_query = TRUE,
+                                    measure_underrepresentation = FALSE,
+                                    evcodes = TRUE)
+```
+
+Over-represented GO terms of Up-regulated DEGs in HQst vs PWst
+```{r}
+gostplot(HQst_vs_PWst_up_reg_over_rep, capped = TRUE, interactive = TRUE)
+```
+
+```{r, fig.width=12, fig.height=6, warning=FALSE, message=FALSE}
+publish_gosttable(HQst_vs_PWst_up_reg_over_rep,
+                  highlight_terms = HQst_vs_PWst_up_reg_over_rep$result[order(HQst_vs_PWst_up_reg_over_rep$result$p_value),][1:20,])
+```
+
+Over-represented GO terms of Down-regulated DEGs in HQst vs PWst
+```{r}
+HQst_vs_PWst_down_reg_over_rep <- gost(query = list("HQst vs PWst Down-regulated" = row.names(HQst_vs_PWst_down$table)),      
+                          organism = "ptricornutum",
+                          ordered_query = TRUE,
+                          measure_underrepresentation = FALSE,
+                          evcodes = TRUE)
+```
+
+```{r}
+gostplot(HQst_vs_PWst_down_reg_over_rep, capped = TRUE, interactive = TRUE)
+```
+
+```{r, fig.width=9, fig.height=6, warning=FALSE, message=FALSE}
+publish_gosttable(HQst_vs_PWst_down_reg_over_rep,
+                  highlight_terms = HQst_vs_PWst_down_reg_over_rep$result[order(HQst_vs_PWst_down_reg_over_rep$result$p_value),][1:20,])
+
+```
+
+
+```{r}
+sessionInfo()
+```
