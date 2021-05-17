@@ -30,4 +30,4 @@ Produced water (PW) is water produced as a byproduct created during the extracti
 
 ## Project Files
 
-RNA_seq_project file contains the data processing steps of the RNA seq data. All shell scripts used for processing on the SJSU CoS HPC are located in the scripts/ directory. The results/ directory contains the gene counts matrix created by merging the STAR results. The R/ contains the R markdown file, html and pdf render of the markdown file, and the output .xlsx files of the DEGs and gene ontology results. The html render of the R markdown file can also be viewed at: <https://codey-phoun.github.io/pw_oilfield/>
+RNA_seq_project file contains the data processing steps of the RNA seq data. All shell scripts used for processing on the SJSU CoS HPC are located in the scripts/ directory. The STAR_results/ directory contains the gene counts matrix created by merging the STAR results. The R/ contains the R markdown file, html and pdf render of the markdown file, and the output .xlsx files of the DEGs and gene ontology results. The html render of the R markdown file can also be viewed at: <https://codey-phoun.github.io/pw_oilfield/>
